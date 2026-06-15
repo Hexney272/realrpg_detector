@@ -397,79 +397,73 @@ body {
 }
 
 /* ═══════════════════════════════════════════
-   CLICK AREAS - Only visible with cursor (M key)
-   Subtle labels over native markers
+   WORLD ICONS - Small square icons like reference image
+   Positioned by Lua every frame (no stutter)
    ═══════════════════════════════════════════ */
-.click-areas-overlay {
+.world-icons-layer {
   position: fixed;
   inset: 0;
   pointer-events: none;
-  z-index: 900;
+  z-index: 500;
 }
 
-.click-area {
+.world-icon {
   position: absolute;
   transform: translate(-50%, -50%);
+  pointer-events: none;
+  will-change: left, top;
+}
+
+.world-icon.clickable {
   pointer-events: auto;
   cursor: pointer;
-  border: none;
-  background: rgba(10, 20, 10, 0.75);
+}
+
+.icon-box {
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(30, 30, 30, 0.82);
   border-radius: 6px;
-  padding: 6px 14px;
-  transition: transform 0.15s, background 0.15s;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
+  padding: 6px;
+  transition: transform 0.12s;
 }
 
-.click-area:hover {
-  transform: translate(-50%, -50%) scale(1.1);
-  background: rgba(20, 40, 18, 0.9);
+.world-icon.clickable:hover .icon-box {
+  transform: scale(1.15);
+  border-color: rgba(255, 255, 255, 0.35);
+  background: rgba(40, 40, 40, 0.92);
 }
 
-.click-area:active {
-  transform: translate(-50%, -50%) scale(0.95);
+.world-icon.clickable:active .icon-box {
+  transform: scale(0.95);
 }
 
-.click-area-text {
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 0.5px;
-  white-space: nowrap;
+/* Dig icon */
+.dig-icon .icon-box {
+  color: rgba(255, 255, 255, 0.85);
 }
 
-.click-area-dig {
-  border: 2px solid rgba(100, 255, 60, 0.6);
-  box-shadow: 0 0 12px rgba(80, 200, 50, 0.3);
-}
-
-.click-area-dig .click-area-text {
+.dig-icon.clickable:hover .icon-box {
   color: #a8ff60;
+  border-color: rgba(100, 255, 60, 0.4);
 }
 
-.click-area-dig:hover {
-  border-color: rgba(140, 255, 80, 0.9);
-  box-shadow: 0 0 20px rgba(100, 255, 60, 0.5);
+/* Crate icon */
+.crate-icon .icon-box {
+  color: rgba(255, 255, 255, 0.85);
 }
 
-.click-area-crate.ready {
-  border: 2px solid rgba(240, 192, 80, 0.6);
-  box-shadow: 0 0 10px rgba(220, 170, 50, 0.3);
+.crate-icon.pickup .icon-box {
+  color: rgba(255, 220, 100, 0.9);
+  border-color: rgba(255, 200, 60, 0.25);
 }
 
-.click-area-crate.ready .click-area-text {
-  color: #f0c855;
-}
-
-.click-area-crate.ready:hover {
-  border-color: rgba(255, 210, 90, 0.9);
-  box-shadow: 0 0 18px rgba(240, 192, 80, 0.5);
-}
-
-.click-area-crate.far {
-  border: 1px solid rgba(150, 130, 80, 0.3);
-  opacity: 0.6;
-  cursor: default;
-}
-
-.click-area-crate.far .click-area-text {
-  color: rgba(180, 160, 100, 0.7);
-  font-weight: 500;
+.crate-icon.clickable.pickup:hover .icon-box {
+  color: #ffd855;
+  border-color: rgba(255, 210, 60, 0.5);
 }
