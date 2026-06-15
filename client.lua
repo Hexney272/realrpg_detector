@@ -126,8 +126,6 @@ local function attachDetector()
 
     local attach = Config.Attachments.detector or {}
 
-    -- Jobb kézhez rögzítve. A pozíció/rotáció külön configban állítható,
-    -- ha a szervereden más ped animáció vagy modell miatt finomhangolni kell.
     AttachEntityToEntity(
         detectorObject,
         ped,
@@ -219,6 +217,8 @@ RegisterNetEvent('realrpg_detector:client:useShovelItem', function()
 end)
 
 local function setRadarVisible(state)
+    SetNuiFocus(state, state)
+    SetNuiFocusKeepInput(state)
     SendNUIMessage({
         action = state and 'show' or 'hide'
     })
@@ -410,14 +410,11 @@ local function toggleDetector(forceState)
         deleteEntitySafe(detectorObject)
         detectorObject = nil
         ClearPedSecondaryTask(PlayerPedId())
-        SendNUIMessage({ action = 'worldIcons', icons = {} })
         notify(Config.Text.detectorOff, 'info')
     end
 end
 
 RegisterNetEvent('realrpg_detector:client:toggleDetector', function(forceState, fromServer)
-    -- Ha itemhez kötött módban vagyunk, akkor kliensről nem kapcsolunk közvetlenül,
-    -- hanem a szerver ellenőrzi, hogy tényleg van-e nálad fémkereső item.
     if Config.ItemUse.requireDetectorItemForToggle and not fromServer then
         TriggerServerEvent('realrpg_detector:server:useDetectorItem')
         return
@@ -440,7 +437,26 @@ if Config.Commands.testToggle then
     end, false)
 end
 
-local function startDig(point)
+-- ═══════════════════════════════════════════
+-- NUI CALLBACK: Dig request from React UI button click
+-- ═══════════════════════════════════════════
+RegisterNUICallback('nuiDigRequest', function(data, cb)
+    cb('ok')
+
+    if isDigging or not detectorActive then return end
+
+    local ped = PlayerPedId()
+    local pCoords = GetEntityCoords(ped)
+    local nearest, distance = getNearestPoint(pCoords)
+
+    if nearest and distance <= Config.Detector.digDistance then
+        startDig(nearest)
+    else
+        notify(Config.Text.tooFar, 'error')
+    end
+end)
+
+function startDig(point)
     if isDigging or not point then return end
 
     pendingDigPoint = point.id
@@ -455,8 +471,11 @@ RegisterNetEvent('realrpg_detector:client:beginDigAllowed', function(pointId)
     end
 
     isDigging = true
-    setRadarVisible(false)
-    SendNUIMessage({ action = 'worldIcons', icons = {} })
+
+    -- Hide NUI and release cursor during dig
+    SetNuiFocus(false, false)
+    SendNUIMessage({ action = 'hide' })
+
     deleteEntitySafe(detectorObject)
     detectorObject = nil
 
@@ -546,6 +565,10 @@ RegisterNetEvent('realrpg_detector:client:clearCrates', function()
     localCrates = {}
 end)
 
+-- ═══════════════════════════════════════════
+-- MAIN DETECTOR LOOP: sends direction/distance data to NUI
+-- Only detects within zone scan ranges (realistic behavior)
+-- ═══════════════════════════════════════════
 CreateThread(function()
     getESX()
 
@@ -564,8 +587,10 @@ CreateThread(function()
                 local targetHeading = headingToPoint(pCoords, nearest.coords)
                 local relativeAngle = normalizeAngle(targetHeading - GetEntityHeading(ped))
                 local strength = 1.0 - math.min(distance / scanRange, 1.0)
+                local canDig = distance <= Config.Detector.digDistance
 
-                if now - lastNuiUpdate > 90 then
+                if now - lastNuiUpdate > 80 then
+                    -- Collect world icons for nearby points
                     local icons = {}
                     for _, point in pairs(knownPoints) do
                         local renderDistance = point.iconRenderDistance or Config.Detector.iconRenderDistance
@@ -582,6 +607,7 @@ CreateThread(function()
                         end
                     end
 
+                    -- Send radar data with canDig and pointId for the NUI dig button
                     SendNUIMessage({
                         action = 'radar',
                         hasTarget = true,
@@ -591,13 +617,16 @@ CreateThread(function()
                         strength = strength,
                         area = nearest.areaName or nearest.zoneLabel or Config.Detector.areaName,
                         coordX = math.floor(pCoords.x),
-                        coordY = math.floor(pCoords.y)
+                        coordY = math.floor(pCoords.y),
+                        canDig = canDig,
+                        pointId = nearest.id
                     })
 
                     SendNUIMessage({ action = 'worldIcons', icons = icons })
                     lastNuiUpdate = now
                 end
 
+                -- Beep sound (faster when closer)
                 if Config.Detector.beepEnabled then
                     local interval = Config.Detector.beepSlowMs - ((Config.Detector.beepSlowMs - Config.Detector.beepFastMs) * strength)
                     if now - lastBeep > interval then
@@ -605,22 +634,17 @@ CreateThread(function()
                         lastBeep = now
                     end
                 end
-
-                if distance <= Config.Detector.digDistance then
-                    drawText3D(nearest.coords + vector3(0.0, 0.0, 0.35), Config.Text.digPrompt, 0.34)
-
-                    if IsControlJustPressed(0, Config.Controls.dig) then
-                        startDig(nearest)
-                    end
-                end
             else
+                -- No target in range - detector is silent, only shows area/coords
                 if now - lastNuiUpdate > 200 then
                     SendNUIMessage({
                         action = 'radar',
                         hasTarget = false,
                         area = Config.Detector.areaName,
                         coordX = math.floor(pCoords.x),
-                        coordY = math.floor(pCoords.y)
+                        coordY = math.floor(pCoords.y),
+                        canDig = false,
+                        pointId = nil
                     })
                     SendNUIMessage({ action = 'worldIcons', icons = {} })
                     lastNuiUpdate = now
@@ -632,6 +656,9 @@ CreateThread(function()
     end
 end)
 
+-- ═══════════════════════════════════════════
+-- CRATE INTERACTION LOOP (pickup nearby crates with E key)
+-- ═══════════════════════════════════════════
 CreateThread(function()
     while true do
         local sleep = 1000
@@ -667,11 +694,14 @@ CreateThread(function()
     end
 end)
 
+-- ═══════════════════════════════════════════
+-- CLEANUP on resource stop
+-- ═══════════════════════════════════════════
 AddEventHandler('onResourceStop', function(resourceName)
     if resourceName ~= GetCurrentResourceName() then return end
 
-    setRadarVisible(false)
-    SendNUIMessage({ action = 'worldIcons', icons = {} })
+    SetNuiFocus(false, false)
+    SendNUIMessage({ action = 'hide' })
     deleteEntitySafe(detectorObject)
     deleteEntitySafe(shovelObject)
 
