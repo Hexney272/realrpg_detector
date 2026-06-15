@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="hu">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+    <div id="detector" class="detector hidden">
+        <div class="detector-top">
+            <span class="mini-icon">▣</span>
+            <span id="coordText">+0000, -0000</span>
+        </div>
+
+        <div class="radar-screen">
+            <div class="ring ring-1"></div>
+            <div class="ring ring-2"></div>
+            <div class="ring ring-3"></div>
+            <div class="cross cross-v"></div>
+            <div class="cross cross-h"></div>
+            <div id="sweep" class="sweep"></div>
+            <div id="targetDot" class="target-dot hidden"></div>
+            <div class="center-dot"></div>
+        </div>
+
+        <div class="detector-bottom">
+            <span class="pin">♦</span>
+            <span id="areaText">Cayo Perico</span>
+        </div>
+    </div>
+
+    <div id="worldIcons"></div>
+
+    <script src="app.js"></script>
+</body>
+</html>
