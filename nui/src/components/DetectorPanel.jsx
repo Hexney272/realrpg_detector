@@ -1,14 +1,13 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react'
 
-export default function DetectorPanel({ data, onDig }) {
-  const [position, setPosition] = useState({ x: window.innerWidth - 380, y: window.innerHeight / 2 - 180 })
+export default function DetectorPanel({ data }) {
+  const [position, setPosition] = useState({ x: window.innerWidth - 380, y: window.innerHeight / 2 - 200 })
   const [dragging, setDragging] = useState(false)
   const dragOffset = useRef({ x: 0, y: 0 })
   const panelRef = useRef(null)
 
   // Dragging logic
   const handleMouseDown = useCallback((e) => {
-    if (e.target.closest('.dig-btn')) return // Don't drag when clicking dig button
     setDragging(true)
     dragOffset.current = {
       x: e.clientX - position.x,
@@ -39,23 +38,25 @@ export default function DetectorPanel({ data, onDig }) {
     }
   }, [dragging, handleMouseMove, handleMouseUp])
 
+  // Precise coordinate formatting
   const formatCoord = (value) => {
-    const sign = value >= 0 ? '+' : '-'
-    return `${sign}${Math.abs(Math.floor(value)).toString().padStart(4, '0')}`
+    const v = Math.round(value * 10) / 10
+    return v.toFixed(1)
   }
 
-  // Calculate arrow rotation: angle is relative to player heading
-  // Positive = right, negative = left
-  const arrowRotation = data.hasTarget ? data.angle : 0
   const strengthPercent = Math.round(data.strength * 100)
-  const distanceDisplay = data.hasTarget ? `${Math.round(data.distance)}m` : '---'
+  const distanceDisplay = data.hasTarget ? `${data.distance.toFixed(1)}m` : '---'
 
-  // Radar dot position (from center, based on angle and distance ratio)
-  const radarRadius = 42 // percentage from center
+  // Arrow rotation: precise angle relative to player heading
+  const arrowRotation = data.hasTarget ? data.angle : 0
+
+  // Radar dot position (precise from center, based on angle and distance ratio)
+  const radarRadius = 42
   const distRatio = data.hasTarget ? Math.min(data.distance / data.maxDistance, 1) : 0
-  const dotX = 50 + Math.sin((data.angle * Math.PI) / 180) * (distRatio * radarRadius)
-  const dotY = 50 - Math.cos((data.angle * Math.PI) / 180) * (distRatio * radarRadius)
-  const dotSize = 10 + data.strength * 16
+  const angleRad = (data.angle * Math.PI) / 180
+  const dotX = 50 + Math.sin(angleRad) * (distRatio * radarRadius)
+  const dotY = 50 - Math.cos(angleRad) * (distRatio * radarRadius)
+  const dotSize = 8 + data.strength * 14
 
   return (
     <div
@@ -70,8 +71,9 @@ export default function DetectorPanel({ data, onDig }) {
           <span className="header-icon">&#9783;</span>
           <span className="header-title">FMDETEKTOR</span>
         </div>
-        <div className="header-coords">
-          {formatCoord(data.coordX)}, {formatCoord(data.coordY)}
+        <div className="header-hint">
+          <span className="hint-key">M</span>
+          <span className="hint-text">kurzor</span>
         </div>
       </div>
 
@@ -112,7 +114,7 @@ export default function DetectorPanel({ data, onDig }) {
           <div className="radar-center" />
         </div>
 
-        {/* Direction arrow (large, shows direction to treasure) */}
+        {/* Direction arrow + info */}
         <div className="direction-section">
           <div className="direction-arrow-container">
             {data.hasTarget ? (
@@ -122,16 +124,15 @@ export default function DetectorPanel({ data, onDig }) {
                 style={{ transform: `rotate(${arrowRotation}deg)` }}
               >
                 <polygon
-                  points="32,6 48,52 32,42 16,52"
+                  points="32,4 50,54 32,44 14,54"
                   fill="currentColor"
                 />
               </svg>
             ) : (
               <div className="no-signal-icon">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <line x1="3" y1="3" x2="21" y2="21" />
-                  <path d="M8.1 8.1C5.5 9.5 3.5 11.5 2 14" />
-                  <path d="M5.1 5.1C3.1 6.5 1.5 8.5 0.5 11" />
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+                  <line x1="4" y1="4" x2="20" y2="20" />
+                  <path d="M12 2a10 10 0 0 1 0 20" strokeDasharray="4 3" />
                 </svg>
               </div>
             )}
@@ -140,13 +141,13 @@ export default function DetectorPanel({ data, onDig }) {
           {/* Signal info */}
           <div className="signal-info">
             <div className="info-row">
-              <span className="info-label">Jel:</span>
-              <span className={`info-value ${data.hasTarget ? 'active' : ''}`}>
-                {data.hasTarget ? `${strengthPercent}%` : 'Nincs'}
+              <span className="info-label">Jel</span>
+              <span className={`info-value ${data.hasTarget ? (data.strength > 0.7 ? 'hot' : 'active') : ''}`}>
+                {data.hasTarget ? `${strengthPercent}%` : '---'}
               </span>
             </div>
             <div className="info-row">
-              <span className="info-label">Tav:</span>
+              <span className="info-label">Táv</span>
               <span className="info-value">{distanceDisplay}</span>
             </div>
 
@@ -157,30 +158,29 @@ export default function DetectorPanel({ data, onDig }) {
                 style={{ width: `${strengthPercent}%` }}
               />
             </div>
+
+            {/* Coordinates */}
+            <div className="coords-row">
+              <span className="coord-val">X: {formatCoord(data.coordX)}</span>
+              <span className="coord-val">Y: {formatCoord(data.coordY)}</span>
+            </div>
           </div>
         </div>
       </div>
 
-      {/* Footer with area + dig button */}
+      {/* Footer: area name */}
       <div className="panel-footer">
         <div className="footer-area">
           <span className="area-pin">&#9830;</span>
-          <span className="area-name">{data.area || 'Ismeretlen'}</span>
+          <span className="area-name">{data.area || 'Keresés...'}</span>
         </div>
-
-        {data.canDig && (
-          <button className="dig-btn" onClick={onDig} title="Ásás megkezdése">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M14 10l-1.5 1.5a2 2 0 0 0 0 2.83l.17.17a2 2 0 0 0 2.83 0L17 13" />
-              <path d="M6 20l4-4" />
-              <path d="M17 5l2 2" />
-              <path d="M11 11L5 5" />
-              <path d="M17.5 6.5L20 4" />
-              <path d="M7.5 17.5L4 21" />
-            </svg>
-            <span>ss</span>
-          </button>
-        )}
+        <div className="footer-status">
+          {data.hasTarget ? (
+            <span className="status-active">● Jelzés</span>
+          ) : (
+            <span className="status-idle">○ Nincs jel</span>
+          )}
+        </div>
       </div>
     </div>
   )
