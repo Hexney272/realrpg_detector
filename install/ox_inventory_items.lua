@@ -9,8 +9,8 @@
     close = true,
     consume = 0,
     description = 'Illegális alapanyag ládák és elrejtett leletek kereséséhez használható detektor.',
-    client = {
-        event = 'realrpg_detector:client:useDetectorItem'
+    server = {
+        event = 'realrpg_detector:server:useDetectorItem'
     }
 },
 
@@ -21,8 +21,8 @@
     close = true,
     consume = 0,
     description = 'A detektorral talált pontok kiásásához szükséges.',
-    client = {
-        event = 'realrpg_detector:client:useShovelItem'
+    server = {
+        event = 'realrpg_detector:server:useShovelItem'
     }
 },
 

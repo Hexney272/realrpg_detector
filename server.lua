@@ -266,6 +266,17 @@ RegisterNetEvent('realrpg_detector:server:useDetectorItem', function()
     TriggerClientEvent('realrpg_detector:client:toggleDetector', src, nil, true)
 end)
 
+RegisterNetEvent('realrpg_detector:server:useShovelItem', function()
+    local src = source
+
+    if getItemCount(src, Config.Items.shovel) <= 0 then
+        notify(src, Config.Text.noShovel or 'Nincs nálad ásó.', 'error')
+        return
+    end
+
+    TriggerClientEvent('realrpg_detector:client:useShovelItem', src)
+end)
+
 RegisterNetEvent('realrpg_detector:server:requestPoints', function()
     local src = source
     sendAllPoints(src)
