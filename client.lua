@@ -130,7 +130,7 @@ RegisterCommand('+detectorCursor', function()
     if (detectorActive or next(localCrates)) and not isDigging then toggleNuiCursor() end
 end)
 RegisterCommand('-detectorCursor', function() end)
-RegisterKeyMapping('+detectorCursor', 'Detektor kurzor (mozgatás/kattintás)', 'keyboard', 'M')
+RegisterKeyMapping('+detectorCursor', 'Detektor kurzor (mozgatás/kattintás)', 'keyboard', Config.Controls.cursorKey or 'COMMA')
 
 -- ═══════════════════════════════════════════
 -- SHOVEL ITEM
@@ -201,7 +201,54 @@ local function normalizeAngle(a)
 end
 
 -- ═══════════════════════════════════════════
--- DIG PROGRESS
+-- PARTICLE EFFECTS (digging)
+-- ═══════════════════════════════════════════
+local function loadPtfx(dict)
+    RequestNamedPtfxAsset(dict)
+    local s = GetGameTimer()
+    while not HasNamedPtfxAssetLoaded(dict) and GetGameTimer() - s < 2000 do Wait(10) end
+    return HasNamedPtfxAssetLoaded(dict)
+end
+
+local function playDigParticles(coords)
+    -- Dirt chunks flying up
+    if loadPtfx('core') then
+        UseParticleFxAsset('core')
+        local dirt1 = StartParticleFxLoopedAtCoord('ent_amb_dirt_kick', coords.x, coords.y, coords.z, 0.0, 0.0, 0.0, 0.6, false, false, false, false)
+        SetParticleFxLoopedColour(dirt1, 0.35, 0.25, 0.12, false)
+        return dirt1
+    end
+    return nil
+end
+
+local function playDirtBurst(coords)
+    if loadPtfx('core') then
+        UseParticleFxAsset('core')
+        StartParticleFxNonLoopedAtCoord('ent_dst_dirt_scatter', coords.x, coords.y, coords.z, 0.0, 0.0, 0.0, 1.2, false, false, false)
+    end
+end
+
+local function playDustCloud(coords)
+    if loadPtfx('core') then
+        UseParticleFxAsset('core')
+        StartParticleFxNonLoopedAtCoord('ent_dst_dust', coords.x, coords.y, coords.z, 0.0, 0.0, 0.0, 1.0, false, false, false)
+    end
+end
+
+local function playFinalBurst(coords)
+    -- Big burst when crate is found
+    if loadPtfx('core') then
+        UseParticleFxAsset('core')
+        StartParticleFxNonLoopedAtCoord('ent_dst_dirt_scatter', coords.x, coords.y, coords.z, 0.0, 0.0, 0.0, 2.0, false, false, false)
+    end
+    if loadPtfx('scr_martin1') then
+        UseParticleFxAsset('scr_martin1')
+        StartParticleFxNonLoopedAtCoord('scr_sol1_sniper_impact', coords.x, coords.y, coords.z, 0.0, 0.0, 0.0, 0.8, false, false, false)
+    end
+end
+
+-- ═══════════════════════════════════════════
+-- DIG PROGRESS (with particles)
 -- ═══════════════════════════════════════════
 local function draw2DText(x, y, text, scale)
     SetTextFont(4); SetTextScale(scale, scale); SetTextColour(255,255,255,230)
@@ -209,7 +256,7 @@ local function draw2DText(x, y, text, scale)
     BeginTextCommandDisplayText('STRING'); AddTextComponentSubstringPlayerName(text); EndTextCommandDisplayText(x,y)
 end
 
-local function progressDig(durationMs, label)
+local function progressDig(durationMs, label, digCoords)
     local ped = PlayerPedId()
     local start = GetGameTimer()
     local finish = start + durationMs
@@ -220,15 +267,51 @@ local function progressDig(durationMs, label)
     FreezeEntityPosition(ped, true)
     TaskStartScenarioInPlace(ped, 'WORLD_HUMAN_GARDENER_PLANT', 0, true)
 
+    -- Start looped dirt particle
+    local loopedPtfx = nil
+    local ptfxCoords = digCoords or GetEntityCoords(ped)
+    loopedPtfx = playDigParticles(ptfxCoords)
+
+    -- Periodic burst timers
+    local nextBurst = start + 1500
+    local burstCount = 0
+
     while GetGameTimer() < finish do
         Wait(0)
         for _, c in ipairs({21,22,23,24,25,30,31,32,33,34,35}) do DisableControlAction(0, c, true) end
         if IsControlJustPressed(0, Config.Controls.cancel) then cancelled = true; break end
-        local p = (GetGameTimer() - start) / durationMs
+
+        local now = GetGameTimer()
+        local p = (now - start) / durationMs
+
+        -- Periodic dirt bursts (getting more intense as progress increases)
+        if now >= nextBurst then
+            burstCount = burstCount + 1
+            playDirtBurst(ptfxCoords + vector3(math.random(-10, 10) * 0.05, math.random(-10, 10) * 0.05, 0.0))
+            if burstCount % 2 == 0 then
+                playDustCloud(ptfxCoords + vector3(math.random(-5, 5) * 0.1, math.random(-5, 5) * 0.1, 0.2))
+            end
+            -- Bursts get faster as we dig deeper
+            local interval = math.max(600, 1500 - (p * 1200))
+            nextBurst = now + interval
+        end
+
+        -- Progress bar
         DrawRect(0.5, 0.86, 0.22, 0.024, 8,10,10,175)
         DrawRect(0.5 - (0.22/2) + (0.22*p/2), 0.86, 0.22*p, 0.024, 226,190,60,225)
         draw2DText(0.5, 0.825, label, 0.33)
         draw2DText(0.5, 0.895, 'Megszakítás: X', 0.26)
+    end
+
+    -- Stop looped particle
+    if loopedPtfx then
+        StopParticleFxLooped(loopedPtfx, false)
+    end
+
+    -- Final big burst if successful
+    if not cancelled then
+        playFinalBurst(ptfxCoords)
+        playDustCloud(ptfxCoords + vector3(0.0, 0.0, 0.3))
     end
 
     ClearPedTasksImmediately(ped); FreezeEntityPosition(ped, false)
@@ -324,7 +407,12 @@ RegisterNetEvent('realrpg_detector:client:beginDigAllowed', function(pointId)
     SendNUIMessage({ action = 'hide' })
     deleteEntitySafe(detectorObject); detectorObject = nil
 
-    local success = progressDig(Config.Detector.digTimeMs, Config.Text.digging)
+    -- Get dig point coords for particle effects
+    local digCoords = nil
+    local point = knownPoints[pointId]
+    if point then digCoords = point.coords end
+
+    local success = progressDig(Config.Detector.digTimeMs, Config.Text.digging, digCoords)
     isDigging = false
     if detectorActive then attachDetector(); showNuiPanel() end
     if success then TriggerServerEvent('realrpg_detector:server:finishDig', pointId)
@@ -342,13 +430,45 @@ local function spawnCrate(crateData)
     local model = loadModel(Config.Models.crate)
     local obj = nil
     if model then
-        obj = CreateObject(model, coords.x, coords.y, coords.z, true, true, false)
-        PlaceObjectOnGroundProperly(obj); FreezeEntityPosition(obj, true); SetEntityAsMissionEntity(obj, true, true)
+        -- Spawn below ground then animate rising
+        local startZ = coords.z - 0.8
+        obj = CreateObject(model, coords.x, coords.y, startZ, true, true, false)
+        SetEntityAsMissionEntity(obj, true, true)
         SetModelAsNoLongerNeeded(model)
+
         if crateData.style == 'green' then SetEntityDrawOutlineColor(80,160,80,255); SetEntityDrawOutline(obj, true)
         elseif crateData.style == 'blue' then SetEntityDrawOutlineColor(80,140,230,255); SetEntityDrawOutline(obj, true)
         elseif crateData.style == 'rare' or crateData.style == 'gold' then SetEntityDrawOutlineColor(226,190,60,255); SetEntityDrawOutline(obj, true) end
+
+        -- Animate: crate rises from underground over ~1.5 seconds
+        CreateThread(function()
+            local riseStart = GetGameTimer()
+            local riseDuration = 1500
+            local targetZ = coords.z
+
+            -- Dust effect as crate emerges
+            playDustCloud(coords + vector3(0.0, 0.0, 0.1))
+
+            while GetGameTimer() - riseStart < riseDuration do
+                Wait(0)
+                if not DoesEntityExist(obj) then return end
+                local progress = (GetGameTimer() - riseStart) / riseDuration
+                -- Ease-out cubic for smooth deceleration
+                local eased = 1.0 - math.pow(1.0 - progress, 3)
+                local currentZ = startZ + (targetZ - startZ) * eased
+                SetEntityCoords(obj, coords.x, coords.y, currentZ, false, false, false, false)
+            end
+
+            -- Final position + freeze
+            SetEntityCoords(obj, coords.x, coords.y, targetZ, false, false, false, false)
+            PlaceObjectOnGroundProperly(obj)
+            FreezeEntityPosition(obj, true)
+
+            -- Small dust puff when it settles
+            playDirtBurst(coords)
+        end)
     end
+
     localCrates[crateData.id] = {
         id = crateData.id, pointId = crateData.pointId, coords = coords, object = obj,
         label = crateData.label or 'Láda', weight = crateData.weight or 3000,

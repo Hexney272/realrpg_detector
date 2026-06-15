@@ -99,11 +99,94 @@ local function normalizeZone(zone, index)
         areaName = zone.areaName or zone.label or Config.Detector.areaName or 'Detektor zóna',
         rewards = zone.rewards or Config.Rewards or {},
         points = zone.points or {},
+        polygon = zone.polygon or nil,  -- PolyZone boundary (list of vec2/vec3)
+        pointCount = zone.pointCount or 0,  -- How many random points to generate
+        minZ = zone.minZ or 0.0,
+        maxZ = zone.maxZ or 100.0,
+        minDistance = zone.minDistance or 15.0, -- Minimum distance between generated points
         respawnMinutes = zone.respawnMinutes or Config.Detector.respawnMinutes,
         scanRange = zone.scanRange or Config.Detector.scanRange,
         iconRenderDistance = zone.iconRenderDistance or Config.Detector.iconRenderDistance,
         tier = zone.tier or zone.valueTier
     }
+end
+
+-- ═══════════════════════════════════════════
+-- POLYZONE RANDOM POINT GENERATION
+-- Generates random points inside a polygon boundary
+-- ═══════════════════════════════════════════
+
+-- Check if a 2D point is inside a polygon (ray casting algorithm)
+local function pointInPolygon(x, y, polygon)
+    local inside = false
+    local n = #polygon
+    local j = n
+
+    for i = 1, n do
+        local xi = polygon[i].x or polygon[i][1]
+        local yi = polygon[i].y or polygon[i][2]
+        local xj = polygon[j].x or polygon[j][1]
+        local yj = polygon[j].y or polygon[j][2]
+
+        if ((yi > y) ~= (yj > y)) and (x < (xj - xi) * (y - yi) / (yj - yi) + xi) then
+            inside = not inside
+        end
+        j = i
+    end
+
+    return inside
+end
+
+-- Get bounding box of polygon
+local function getPolygonBounds(polygon)
+    local minX, minY = math.huge, math.huge
+    local maxX, maxY = -math.huge, -math.huge
+
+    for _, p in ipairs(polygon) do
+        local px = p.x or p[1]
+        local py = p.y or p[2]
+        if px < minX then minX = px end
+        if px > maxX then maxX = px end
+        if py < minY then minY = py end
+        if py > maxY then maxY = py end
+    end
+
+    return minX, minY, maxX, maxY
+end
+
+-- Check minimum distance from existing points
+local function isFarEnough(x, y, existingPoints, minDist)
+    for _, p in ipairs(existingPoints) do
+        local dx = x - p.x
+        local dy = y - p.y
+        if (dx * dx + dy * dy) < (minDist * minDist) then
+            return false
+        end
+    end
+    return true
+end
+
+-- Generate random points inside a polygon
+local function generatePolygonPoints(polygon, count, minZ, maxZ, minDistance)
+    local points = {}
+    local minX, minY, maxX, maxY = getPolygonBounds(polygon)
+    local maxAttempts = count * 50 -- Safety: prevent infinite loops
+    local attempts = 0
+
+    while #points < count and attempts < maxAttempts do
+        attempts = attempts + 1
+        local rx = minX + math.random() * (maxX - minX)
+        local ry = minY + math.random() * (maxY - minY)
+
+        if pointInPolygon(rx, ry, polygon) and isFarEnough(rx, ry, points, minDistance) then
+            -- Use a Z in the middle of the range (client will adjust with ground detection)
+            local rz = (minZ + maxZ) / 2.0
+            points[#points + 1] = vector3(rx, ry, rz)
+        end
+    end
+
+    dbg(('Generated %d/%d polygon points in %d attempts'):format(#points, count, attempts))
+    return points
 end
 
 local function initPoints()
@@ -115,7 +198,16 @@ local function initPoints()
         local zone = normalizeZone(rawZone, zoneIndex)
         zoneCount = zoneCount + 1
 
-        for localIndex, coords in ipairs(zone.points or {}) do
+        -- Determine points: use polygon generation if defined, otherwise use fixed points
+        local zonePoints = zone.points or {}
+
+        if zone.polygon and #zone.polygon >= 3 and zone.pointCount > 0 then
+            -- Dynamic PolyZone generation: random points inside polygon
+            zonePoints = generatePolygonPoints(zone.polygon, zone.pointCount, zone.minZ, zone.maxZ, zone.minDistance)
+            dbg(('Zone "%s": generated %d dynamic points from polygon'):format(zone.id, #zonePoints))
+        end
+
+        for localIndex, coords in ipairs(zonePoints) do
             pointId = pointId + 1
             ActivePoints[pointId] = {
                 id = pointId,

@@ -72,7 +72,7 @@ export default function DetectorPanel({ data }) {
           <span className="header-title">FMDETEKTOR</span>
         </div>
         <div className="header-hint">
-          <span className="hint-key">M</span>
+          <span className="hint-key">,</span>
           <span className="hint-text">kurzor</span>
         </div>
       </div>
