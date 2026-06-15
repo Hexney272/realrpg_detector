@@ -10,6 +10,9 @@ local lastBeep = 0
 local lastNuiUpdate = 0
 local nuiCursorActive = false
 
+-- The closest diggable point (within digDistance) — used by NUI dig click
+local closestDiggablePoint = nil
+
 local function dbg(msg)
     if Config.Debug then
         print(('[realrpg_detector/client] %s'):format(msg))
@@ -18,38 +21,24 @@ end
 
 local function getESX()
     if ESX then return ESX end
-
     if exports and exports['es_extended'] and exports['es_extended'].getSharedObject then
         ESX = exports['es_extended']:getSharedObject()
     else
         TriggerEvent('esx:getSharedObject', function(obj) ESX = obj end)
     end
-
     return ESX
 end
 
 local function notify(msg, nType)
     if GetResourceState('ox_lib') == 'started' then
         local ok = pcall(function()
-            exports.ox_lib:notify({
-                title = 'Detektor',
-                description = msg,
-                type = nType or 'inform'
-            })
+            exports.ox_lib:notify({ title = 'Detektor', description = msg, type = nType or 'inform' })
         end)
         if ok then return end
     end
-
     local esx = getESX()
-    if esx and esx.ShowNotification then
-        esx.ShowNotification(msg)
-        return
-    end
-
-    TriggerEvent('chat:addMessage', {
-        color = { 230, 190, 60 },
-        args = { 'Detektor', msg }
-    })
+    if esx and esx.ShowNotification then esx.ShowNotification(msg) return end
+    TriggerEvent('chat:addMessage', { color = { 230, 190, 60 }, args = { 'Detektor', msg } })
 end
 
 RegisterNetEvent('realrpg_detector:client:notify', function(msg, nType)
@@ -62,31 +51,27 @@ end)
 local function loadModel(modelName, timeoutMs)
     timeoutMs = timeoutMs or 3500
     if not modelName or modelName == '' then return nil end
-
     local model = joaat(modelName)
     if not IsModelInCdimage(model) then return nil end
-
     RequestModel(model)
     local start = GetGameTimer()
     while not HasModelLoaded(model) do
         Wait(10)
         if GetGameTimer() - start > timeoutMs then return nil end
     end
-
     return model, modelName
 end
 
 local function loadFirstModel(modelList, fallbackModel)
     if type(modelList) == 'table' then
-        for _, modelName in ipairs(modelList) do
-            local model, loadedName = loadModel(modelName)
-            if model then return model, loadedName end
+        for _, mn in ipairs(modelList) do
+            local m, n = loadModel(mn)
+            if m then return m, n end
         end
     elseif type(modelList) == 'string' then
-        local model, loadedName = loadModel(modelList)
-        if model then return model, loadedName end
+        local m, n = loadModel(modelList)
+        if m then return m, n end
     end
-
     if fallbackModel then return loadModel(fallbackModel) end
     return nil, nil
 end
@@ -99,76 +84,50 @@ local function deleteEntitySafe(entity)
 end
 
 -- ═══════════════════════════════════════════
--- DETECTOR ATTACH/DETACH
+-- DETECTOR / SHOVEL ATTACH
 -- ═══════════════════════════════════════════
 local function attachDetector()
     local ped = PlayerPedId()
     SetCurrentPedWeapon(ped, joaat('WEAPON_UNARMED'), true)
-
     local model, loadedName = loadFirstModel(Config.Models.detector, Config.Models.detectorFallback)
-    if not model then
-        dbg('Detector model could not be loaded.')
-        notify('A detektor modell nem tölthető be.', 'error')
-        return
-    end
-
+    if not model then notify('A detektor modell nem tölthető be.', 'error') return end
     deleteEntitySafe(detectorObject)
-
     local coords = GetEntityCoords(ped)
     detectorObject = CreateObject(model, coords.x, coords.y, coords.z + 0.2, true, true, false)
-
-    local attach = Config.Attachments.detector or {}
-    AttachEntityToEntity(
-        detectorObject, ped,
-        GetPedBoneIndex(ped, attach.bone or 57005),
-        attach.x or 0.16, attach.y or 0.03, attach.z or -0.05,
-        attach.rx or -95.0, attach.ry or 0.0, attach.rz or 18.0,
-        true, true, false, true, 1, true
-    )
-
+    local a = Config.Attachments.detector or {}
+    AttachEntityToEntity(detectorObject, ped, GetPedBoneIndex(ped, a.bone or 57005),
+        a.x or 0.16, a.y or 0.03, a.z or -0.05, a.rx or -95.0, a.ry or 0.0, a.rz or 18.0,
+        true, true, false, true, 1, true)
     if Config.ItemUse.playDetectorIdleAnim then
         RequestAnimDict('amb@world_human_stand_mobile@male@text@base')
-        local start = GetGameTimer()
-        while not HasAnimDictLoaded('amb@world_human_stand_mobile@male@text@base') and GetGameTimer() - start < 1000 do Wait(10) end
+        local s = GetGameTimer()
+        while not HasAnimDictLoaded('amb@world_human_stand_mobile@male@text@base') and GetGameTimer() - s < 1000 do Wait(10) end
         if HasAnimDictLoaded('amb@world_human_stand_mobile@male@text@base') then
             TaskPlayAnim(ped, 'amb@world_human_stand_mobile@male@text@base', 'base', 2.0, 2.0, -1, 49, 0.0, false, false, false)
         end
     end
-
-    dbg(('Detector attached: %s'):format(loadedName or 'unknown'))
     SetModelAsNoLongerNeeded(model)
 end
 
 local function attachShovel()
     local ped = PlayerPedId()
     SetCurrentPedWeapon(ped, joaat('WEAPON_UNARMED'), true)
-
     local model, loadedName = loadFirstModel(Config.Models.shovel, nil)
-    if not model then
-        dbg('Shovel model could not be loaded.')
-        return
-    end
-
+    if not model then return end
     deleteEntitySafe(shovelObject)
-
     local coords = GetEntityCoords(ped)
     shovelObject = CreateObject(model, coords.x, coords.y, coords.z + 0.2, true, true, false)
-
-    local attach = Config.Attachments.shovel or {}
-    AttachEntityToEntity(
-        shovelObject, ped,
-        GetPedBoneIndex(ped, attach.bone or 57005),
-        attach.x or 0.12, attach.y or -0.03, attach.z or -0.04,
-        attach.rx or -100.0, attach.ry or 10.0, attach.rz or 15.0,
-        true, true, false, true, 1, true
-    )
-
-    dbg(('Shovel attached: %s'):format(loadedName or 'unknown'))
+    local a = Config.Attachments.shovel or {}
+    AttachEntityToEntity(shovelObject, ped, GetPedBoneIndex(ped, a.bone or 57005),
+        a.x or 0.12, a.y or -0.03, a.z or -0.04, a.rx or -100.0, a.ry or 10.0, a.rz or 15.0,
+        true, true, false, true, 1, true)
     SetModelAsNoLongerNeeded(model)
 end
 
 -- ═══════════════════════════════════════════
--- NUI VISIBILITY (panel always visible when detector on, cursor toggled by M)
+-- NUI VISIBILITY
+-- Panel is always visible when detector active (no pointer events)
+-- M toggles cursor for panel dragging + crate clicks
 -- ═══════════════════════════════════════════
 local function showNuiPanel()
     SendNUIMessage({ action = 'show' })
@@ -189,9 +148,8 @@ local function toggleNuiCursor()
     SendNUIMessage({ action = 'cursorState', active = nuiCursorActive })
 end
 
--- M key toggles cursor for the NUI panel
 RegisterCommand('+detectorCursor', function()
-    if detectorActive and not isDigging then
+    if (detectorActive or next(localCrates)) and not isDigging then
         toggleNuiCursor()
     end
 end)
@@ -199,19 +157,18 @@ RegisterCommand('-detectorCursor', function() end)
 RegisterKeyMapping('+detectorCursor', 'Detektor kurzor (mozgatás/kattintás)', 'keyboard', 'M')
 
 -- ═══════════════════════════════════════════
--- SHOVEL ITEM USE
+-- SHOVEL ITEM
 -- ═══════════════════════════════════════════
 local shovelPreviewActive = false
 local function setShovelPreview(state)
     if isDigging then return end
     shovelPreviewActive = state
     local ped = PlayerPedId()
-
     if state then
         attachShovel()
         RequestAnimDict('amb@world_human_gardener_plant@male@idle_a')
-        local start = GetGameTimer()
-        while not HasAnimDictLoaded('amb@world_human_gardener_plant@male@idle_a') and GetGameTimer() - start < 1000 do Wait(10) end
+        local s = GetGameTimer()
+        while not HasAnimDictLoaded('amb@world_human_gardener_plant@male@idle_a') and GetGameTimer() - s < 1000 do Wait(10) end
         if HasAnimDictLoaded('amb@world_human_gardener_plant@male@idle_a') then
             TaskPlayAnim(ped, 'amb@world_human_gardener_plant@male@idle_a', 'idle_a', 2.0, 2.0, -1, 49, 0.0, false, false, false)
         end
@@ -257,13 +214,8 @@ RegisterNetEvent('realrpg_detector:client:syncPoints', function(points)
     dbg(('Synced %s points'):format(#(points or {})))
 end)
 
-RegisterNetEvent('realrpg_detector:client:addPoint', function(point)
-    addKnownPoint(point)
-end)
-
-RegisterNetEvent('realrpg_detector:client:removePoint', function(pointId)
-    knownPoints[tonumber(pointId)] = nil
-end)
+RegisterNetEvent('realrpg_detector:client:addPoint', function(point) addKnownPoint(point) end)
+RegisterNetEvent('realrpg_detector:client:removePoint', function(pointId) knownPoints[tonumber(pointId)] = nil end)
 
 -- ═══════════════════════════════════════════
 -- NAVIGATION HELPERS
@@ -297,7 +249,7 @@ local function normalizeAngle(angle)
 end
 
 -- ═══════════════════════════════════════════
--- DIG PROGRESS BAR
+-- DIG PROGRESS BAR (native, no NUI lag)
 -- ═══════════════════════════════════════════
 local function draw2DText(x, y, text, scale)
     SetTextFont(4)
@@ -363,7 +315,6 @@ local function progressDig(durationMs, label)
     FreezeEntityPosition(ped, false)
     deleteEntitySafe(shovelObject)
     shovelObject = nil
-
     return not cancelled
 end
 
@@ -386,7 +337,6 @@ local function toggleDetector(forceState)
             shovelObject = nil
             ClearPedSecondaryTask(PlayerPedId())
         end
-
         TriggerServerEvent('realrpg_detector:server:requestPoints')
         attachDetector()
         showNuiPanel()
@@ -396,6 +346,7 @@ local function toggleDetector(forceState)
         deleteEntitySafe(detectorObject)
         detectorObject = nil
         ClearPedSecondaryTask(PlayerPedId())
+        closestDiggablePoint = nil
         notify(Config.Text.detectorOff, 'info')
     end
 end
@@ -426,13 +377,20 @@ end
 -- NUI CALLBACKS
 -- ═══════════════════════════════════════════
 
--- Dig request: player clicks the animated dig icon in the game world via NUI
+-- Dig request from NUI (click the native marker that appeared)
 RegisterNUICallback('nuiDigRequest', function(data, cb)
     cb('ok')
     if isDigging or not detectorActive then return end
 
     local pointId = tonumber(data.pointId)
-    if not pointId then return end
+    if not pointId then
+        -- Fallback: use closestDiggablePoint
+        if closestDiggablePoint then
+            pointId = closestDiggablePoint.id
+        else
+            return
+        end
+    end
 
     local point = knownPoints[pointId]
     if not point then return end
@@ -448,7 +406,7 @@ RegisterNUICallback('nuiDigRequest', function(data, cb)
     end
 end)
 
--- Crate pickup: player clicks the crate icon in the game world via NUI
+-- Crate pickup from NUI click
 RegisterNUICallback('nuiCratePickup', function(data, cb)
     cb('ok')
     if isDigging then return end
@@ -468,7 +426,7 @@ RegisterNUICallback('nuiCratePickup', function(data, cb)
     end
 end)
 
--- Close NUI cursor (Escape in NUI)
+-- Close cursor via ESC
 RegisterNUICallback('closeCursor', function(data, cb)
     cb('ok')
     if nuiCursorActive then
@@ -492,8 +450,8 @@ RegisterNetEvent('realrpg_detector:client:beginDigAllowed', function(pointId)
     if pendingDigPoint ~= pointId then return end
 
     isDigging = true
+    closestDiggablePoint = nil
 
-    -- Disable NUI cursor during dig
     if nuiCursorActive then
         nuiCursorActive = false
         SetNuiFocus(false, false)
@@ -538,16 +496,12 @@ local function spawnCrate(crateData)
         FreezeEntityPosition(obj, true)
         SetEntityAsMissionEntity(obj, true, true)
         SetModelAsNoLongerNeeded(model)
-
         if crateData.style == 'green' then
-            SetEntityDrawOutlineColor(80, 160, 80, 255)
-            SetEntityDrawOutline(obj, true)
+            SetEntityDrawOutlineColor(80, 160, 80, 255); SetEntityDrawOutline(obj, true)
         elseif crateData.style == 'blue' then
-            SetEntityDrawOutlineColor(80, 140, 230, 255)
-            SetEntityDrawOutline(obj, true)
+            SetEntityDrawOutlineColor(80, 140, 230, 255); SetEntityDrawOutline(obj, true)
         elseif crateData.style == 'rare' or crateData.style == 'gold' then
-            SetEntityDrawOutlineColor(226, 190, 60, 255)
-            SetEntityDrawOutline(obj, true)
+            SetEntityDrawOutlineColor(226, 190, 60, 255); SetEntityDrawOutline(obj, true)
         end
     end
 
@@ -565,27 +519,98 @@ local function spawnCrate(crateData)
     }
 end
 
-RegisterNetEvent('realrpg_detector:client:spawnCrate', function(crateData)
-    spawnCrate(crateData)
-end)
-
+RegisterNetEvent('realrpg_detector:client:spawnCrate', function(crateData) spawnCrate(crateData) end)
 RegisterNetEvent('realrpg_detector:client:removeCrate', function(crateId)
     local crate = localCrates[crateId]
-    if crate then
-        deleteEntitySafe(crate.object)
-        localCrates[crateId] = nil
-    end
+    if crate then deleteEntitySafe(crate.object); localCrates[crateId] = nil end
 end)
-
 RegisterNetEvent('realrpg_detector:client:clearCrates', function()
     for _, crate in pairs(localCrates) do deleteEntitySafe(crate.object) end
     localCrates = {}
 end)
 
 -- ═══════════════════════════════════════════
+-- NATIVE MARKER DRAWING (no lag, runs every frame)
+-- Only shows dig marker when VERY close (digDistance)
+-- Crate markers always visible when nearby
+-- ═══════════════════════════════════════════
+CreateThread(function()
+    while true do
+        local sleep = 500
+        local ped = PlayerPedId()
+        local pCoords = GetEntityCoords(ped)
+
+        -- Dig point marker: only if detector active AND within dig distance
+        if detectorActive and not isDigging and closestDiggablePoint then
+            sleep = 0
+            local point = closestDiggablePoint
+            local dist = #(pCoords - point.coords)
+
+            if dist <= Config.Detector.digDistance then
+                -- Animated pulsing marker above the dig point
+                local pulse = (math.sin(GetGameTimer() / 300.0) + 1.0) / 2.0 -- 0..1
+                local scale = 0.6 + pulse * 0.25
+                local alpha = math.floor(160 + pulse * 95)
+
+                -- Green glowing column marker
+                DrawMarker(1,
+                    point.coords.x, point.coords.y, point.coords.z + 0.1,
+                    0.0, 0.0, 0.0,
+                    0.0, 0.0, 0.0,
+                    scale, scale, 1.2,
+                    80, 220, 60, alpha,
+                    false, true, 2, false, nil, nil, false)
+
+                -- Arrow on top pointing down
+                DrawMarker(36,
+                    point.coords.x, point.coords.y, point.coords.z + 1.8 + pulse * 0.15,
+                    0.0, 0.0, 0.0,
+                    180.0, 0.0, 0.0,
+                    0.35, 0.35, 0.35,
+                    100, 255, 70, alpha,
+                    false, true, 2, true, nil, nil, false)
+            end
+        end
+
+        -- Crate markers (native, no lag)
+        for crateId, crate in pairs(localCrates) do
+            local dist = #(pCoords - crate.coords)
+            if dist < 20.0 then
+                sleep = 0
+                local canPickup = dist <= Config.Detector.pickupDistance
+                local pulse = (math.sin(GetGameTimer() / 400.0) + 1.0) / 2.0
+
+                if canPickup then
+                    -- Golden pulsing ring when close enough to pick up
+                    DrawMarker(25,
+                        crate.coords.x, crate.coords.y, crate.coords.z + 1.0 + pulse * 0.1,
+                        0.0, 0.0, 0.0,
+                        0.0, 0.0, GetGameTimer() / 10.0,
+                        0.5, 0.5, 0.5,
+                        240, 190, 50, math.floor(180 + pulse * 75),
+                        false, true, 2, true, nil, nil, false)
+                else
+                    -- Subtle marker when nearby but not close enough
+                    DrawMarker(2,
+                        crate.coords.x, crate.coords.y, crate.coords.z + 1.2,
+                        0.0, 0.0, 0.0,
+                        0.0, 180.0, 0.0,
+                        0.25, 0.25, 0.25,
+                        200, 160, 50, math.floor(100 + pulse * 50),
+                        true, true, 2, false, nil, nil, false)
+                end
+            end
+        end
+
+        Wait(sleep)
+    end
+end)
+
+-- ═══════════════════════════════════════════
 -- MAIN DETECTOR LOOP
--- Sends precise direction data to NUI + world icons for dig points + crate icons
--- Only within zone scan ranges (realistic)
+-- Sends ONLY radar data to NUI (direction, strength, distance)
+-- No world icons sent to NUI (markers are native = no stutter)
+-- Dig point only revealed when within digDistance
 -- ═══════════════════════════════════════════
 CreateThread(function()
     getESX()
@@ -608,48 +633,15 @@ CreateThread(function()
                 local strength = 1.0 - math.min(distance / scanRange, 1.0)
                 local canDig = distance <= Config.Detector.digDistance
 
-                if now - lastNuiUpdate > 60 then
-                    -- World-space dig icons for nearby points
-                    local digIcons = {}
-                    for _, point in pairs(knownPoints) do
-                        local renderDist = point.iconRenderDistance or Config.Detector.iconRenderDistance
-                        local dist = #(pCoords - point.coords)
-                        if dist <= renderDist then
-                            local onScreen, sx, sy = World3dToScreen2d(point.coords.x, point.coords.y, point.coords.z + 0.8)
-                            if onScreen then
-                                local isDiggable = dist <= Config.Detector.digDistance
-                                digIcons[#digIcons + 1] = {
-                                    pointId = point.id,
-                                    x = sx * 100.0,
-                                    y = sy * 100.0,
-                                    alpha = math.max(0.4, 1.0 - (dist / renderDist)),
-                                    diggable = isDiggable,
-                                    dist = math.floor(dist)
-                                }
-                            end
-                        end
-                    end
+                -- Only reveal dig marker when very close
+                if canDig then
+                    closestDiggablePoint = nearest
+                else
+                    closestDiggablePoint = nil
+                end
 
-                    -- World-space crate icons
-                    local crateIcons = {}
-                    for crateId, crate in pairs(localCrates) do
-                        local dist = #(pCoords - crate.coords)
-                        if dist < 25.0 then
-                            local onScreen, sx, sy = World3dToScreen2d(crate.coords.x, crate.coords.y, crate.coords.z + 0.8)
-                            if onScreen then
-                                local canPickup = dist <= Config.Detector.pickupDistance
-                                crateIcons[#crateIcons + 1] = {
-                                    crateId = crateId,
-                                    x = sx * 100.0,
-                                    y = sy * 100.0,
-                                    label = crate.label,
-                                    canPickup = canPickup,
-                                    dist = math.floor(dist)
-                                }
-                            end
-                        end
-                    end
-
+                -- Send radar data to NUI (panel only, no world positions)
+                if now - lastNuiUpdate > 50 then
                     SendNUIMessage({
                         action = 'radar',
                         hasTarget = true,
@@ -663,13 +655,10 @@ CreateThread(function()
                         canDig = canDig,
                         pointId = nearest.id
                     })
-
-                    SendNUIMessage({ action = 'digIcons', icons = digIcons })
-                    SendNUIMessage({ action = 'crateIcons', icons = crateIcons })
                     lastNuiUpdate = now
                 end
 
-                -- Beep
+                -- Beep (faster when closer)
                 if Config.Detector.beepEnabled then
                     local interval = Config.Detector.beepSlowMs - ((Config.Detector.beepSlowMs - Config.Detector.beepFastMs) * strength)
                     if now - lastBeep > interval then
@@ -679,7 +668,9 @@ CreateThread(function()
                 end
             else
                 -- No target in range
-                if now - lastNuiUpdate > 200 then
+                closestDiggablePoint = nil
+
+                if now - lastNuiUpdate > 250 then
                     SendNUIMessage({
                         action = 'radar',
                         hasTarget = false,
@@ -689,41 +680,67 @@ CreateThread(function()
                         canDig = false,
                         pointId = nil
                     })
-                    SendNUIMessage({ action = 'digIcons', icons = {} })
-                    SendNUIMessage({ action = 'crateIcons', icons = {} })
                     lastNuiUpdate = now
                 end
             end
         else
-            -- Also send crate icons when detector is off (so player can pick them up)
-            if not isDigging and next(localCrates) then
-                sleep = 200
-                local ped = PlayerPedId()
-                local pCoords = GetEntityCoords(ped)
-                local crateIcons = {}
-                for crateId, crate in pairs(localCrates) do
-                    local dist = #(pCoords - crate.coords)
-                    if dist < 25.0 then
-                        local onScreen, sx, sy = World3dToScreen2d(crate.coords.x, crate.coords.y, crate.coords.z + 0.8)
-                        if onScreen then
-                            crateIcons[#crateIcons + 1] = {
-                                crateId = crateId,
-                                x = sx * 100.0,
-                                y = sy * 100.0,
-                                label = crate.label,
-                                canPickup = dist <= Config.Detector.pickupDistance,
-                                dist = math.floor(dist)
-                            }
-                        end
+            closestDiggablePoint = nil
+        end
+
+        Wait(sleep)
+    end
+end)
+
+-- ═══════════════════════════════════════════
+-- CRATE NUI ICONS (only screen positions for click targets, sent less often)
+-- Only sent when cursor is active (player wants to click)
+-- ═══════════════════════════════════════════
+CreateThread(function()
+    while true do
+        local sleep = 500
+
+        if nuiCursorActive and not isDigging then
+            sleep = 100
+            local ped = PlayerPedId()
+            local pCoords = GetEntityCoords(ped)
+            local crateIcons = {}
+
+            for crateId, crate in pairs(localCrates) do
+                local dist = #(pCoords - crate.coords)
+                if dist < 20.0 then
+                    local onScreen, sx, sy = World3dToScreen2d(crate.coords.x, crate.coords.y, crate.coords.z + 1.0)
+                    if onScreen then
+                        crateIcons[#crateIcons + 1] = {
+                            crateId = crateId,
+                            x = sx * 100.0,
+                            y = sy * 100.0,
+                            label = crate.label,
+                            canPickup = dist <= Config.Detector.pickupDistance
+                        }
                     end
                 end
-                if #crateIcons > 0 then
-                    SendNUIMessage({ action = 'crateIcons', icons = crateIcons })
-                    SendNUIMessage({ action = 'showCratesOnly' })
-                else
-                    SendNUIMessage({ action = 'hideCratesOnly' })
+            end
+
+            -- Dig icon click area (only when diggable and cursor active)
+            local digIcon = nil
+            if detectorActive and closestDiggablePoint then
+                local point = closestDiggablePoint
+                local onScreen, sx, sy = World3dToScreen2d(point.coords.x, point.coords.y, point.coords.z + 1.5)
+                if onScreen then
+                    digIcon = {
+                        pointId = point.id,
+                        x = sx * 100.0,
+                        y = sy * 100.0
+                    }
                 end
             end
+
+            SendNUIMessage({ action = 'crateIcons', icons = crateIcons })
+            SendNUIMessage({ action = 'digIcon', icon = digIcon })
+        else
+            -- Clear clickable areas when cursor not active
+            SendNUIMessage({ action = 'crateIcons', icons = {} })
+            SendNUIMessage({ action = 'digIcon', icon = nil })
         end
 
         Wait(sleep)
@@ -735,13 +752,9 @@ end)
 -- ═══════════════════════════════════════════
 AddEventHandler('onResourceStop', function(resourceName)
     if resourceName ~= GetCurrentResourceName() then return end
-
     SetNuiFocus(false, false)
     SendNUIMessage({ action = 'hide' })
     deleteEntitySafe(detectorObject)
     deleteEntitySafe(shovelObject)
-
-    for _, crate in pairs(localCrates) do
-        deleteEntitySafe(crate.object)
-    end
+    for _, crate in pairs(localCrates) do deleteEntitySafe(crate.object) end
 end)

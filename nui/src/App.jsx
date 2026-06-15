@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react'
 import DetectorPanel from './components/DetectorPanel'
-import DigIcons from './components/DigIcons'
-import CrateIcons from './components/CrateIcons'
+import ClickAreas from './components/ClickAreas'
 
 // FiveM NUI resource name helper
 if (!window.GetParentResourceName) {
@@ -10,7 +9,6 @@ if (!window.GetParentResourceName) {
 
 export default function App() {
   const [visible, setVisible] = useState(false)
-  const [cratesOnlyVisible, setCratesOnlyVisible] = useState(false)
   const [cursorActive, setCursorActive] = useState(false)
   const [radarData, setRadarData] = useState({
     hasTarget: false,
@@ -24,8 +22,8 @@ export default function App() {
     canDig: false,
     pointId: null
   })
-  const [digIcons, setDigIcons] = useState([])
   const [crateIcons, setCrateIcons] = useState([])
+  const [digIcon, setDigIcon] = useState(null)
 
   const handleMessage = useCallback((event) => {
     const data = event.data || {}
@@ -33,13 +31,11 @@ export default function App() {
     switch (data.action) {
       case 'show':
         setVisible(true)
-        setCratesOnlyVisible(false)
         break
       case 'hide':
         setVisible(false)
-        setCratesOnlyVisible(false)
-        setDigIcons([])
         setCrateIcons([])
+        setDigIcon(null)
         break
       case 'cursorState':
         setCursorActive(!!data.active)
@@ -58,18 +54,11 @@ export default function App() {
           pointId: data.pointId || null
         })
         break
-      case 'digIcons':
-        setDigIcons(data.icons || [])
-        break
       case 'crateIcons':
         setCrateIcons(data.icons || [])
         break
-      case 'showCratesOnly':
-        setCratesOnlyVisible(true)
-        break
-      case 'hideCratesOnly':
-        setCratesOnlyVisible(false)
-        setCrateIcons([])
+      case 'digIcon':
+        setDigIcon(data.icon || null)
         break
       default:
         break
@@ -113,16 +102,19 @@ export default function App() {
     })
   }, [])
 
-  // Show crate icons even when detector panel is hidden (cratesOnlyVisible)
-  const showCrates = (visible || cratesOnlyVisible) && crateIcons.length > 0
-
-  if (!visible && !showCrates) return null
+  if (!visible) return null
 
   return (
     <div className={`app-root ${cursorActive ? 'cursor-active' : 'cursor-inactive'}`}>
-      {visible && <DetectorPanel data={radarData} />}
-      {visible && <DigIcons icons={digIcons} cursorActive={cursorActive} onClick={handleDigClick} />}
-      {showCrates && <CrateIcons icons={crateIcons} cursorActive={cursorActive} onClick={handleCrateClick} />}
+      <DetectorPanel data={radarData} />
+      {cursorActive && (
+        <ClickAreas
+          digIcon={digIcon}
+          crateIcons={crateIcons}
+          onDigClick={handleDigClick}
+          onCrateClick={handleCrateClick}
+        />
+      )}
     </div>
   )
 }

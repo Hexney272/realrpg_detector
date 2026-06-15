@@ -397,186 +397,79 @@ body {
 }
 
 /* ═══════════════════════════════════════════
-   DIG ICONS - Large, animated, world-space
+   CLICK AREAS - Only visible with cursor (M key)
+   Subtle labels over native markers
    ═══════════════════════════════════════════ */
-.dig-icon {
+.click-areas-overlay {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 900;
+}
+
+.click-area {
   position: absolute;
   transform: translate(-50%, -50%);
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 4px;
-  pointer-events: none;
-  transition: opacity 150ms;
-}
-
-.dig-icon.clickable {
   pointer-events: auto;
   cursor: pointer;
+  border: none;
+  background: rgba(10, 20, 10, 0.75);
+  border-radius: 6px;
+  padding: 6px 14px;
+  transition: transform 0.15s, background 0.15s;
 }
 
-.dig-icon.clickable.diggable:hover .dig-icon-ring {
-  transform: scale(1.15);
-  border-color: rgba(160, 255, 80, 0.8);
-  box-shadow: 0 0 24px rgba(100, 255, 60, 0.5);
+.click-area:hover {
+  transform: translate(-50%, -50%) scale(1.1);
+  background: rgba(20, 40, 18, 0.9);
 }
 
-.dig-icon-ring {
-  width: 52px;
-  height: 52px;
-  border-radius: 50%;
-  border: 3px solid rgba(120, 200, 80, 0.5);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: rgba(20, 40, 18, 0.7);
-  box-shadow: 0 0 16px rgba(80, 180, 50, 0.3), inset 0 0 8px rgba(80, 180, 50, 0.1);
-  transition: transform 0.2s, border-color 0.2s, box-shadow 0.2s;
+.click-area:active {
+  transform: translate(-50%, -50%) scale(0.95);
 }
 
-.dig-icon.diggable .dig-icon-ring {
-  border-color: rgba(160, 255, 80, 0.7);
-  box-shadow: 0 0 20px rgba(100, 255, 60, 0.4), inset 0 0 10px rgba(100, 255, 60, 0.15);
-  animation: digRingPulse 1.4s ease-in-out infinite;
-}
-
-@keyframes digRingPulse {
-  0%, 100% {
-    transform: scale(1);
-    box-shadow: 0 0 20px rgba(100, 255, 60, 0.4), inset 0 0 10px rgba(100, 255, 60, 0.15);
-  }
-  50% {
-    transform: scale(1.08);
-    box-shadow: 0 0 30px rgba(100, 255, 60, 0.6), inset 0 0 14px rgba(100, 255, 60, 0.25);
-  }
-}
-
-.dig-icon-inner {
-  width: 28px;
-  height: 28px;
-  color: #8eff50;
-  animation: digStarSpin 4s linear infinite;
-}
-
-.dig-icon.distant .dig-icon-inner {
-  color: rgba(120, 200, 80, 0.6);
-  animation: none;
-}
-
-@keyframes digStarSpin {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
-}
-
-.dig-icon-inner svg {
-  width: 100%;
-  height: 100%;
-}
-
-.dig-icon-label {
-  font-size: 10px;
+.click-area-text {
+  font-size: 12px;
   font-weight: 700;
-  color: #a8ff60;
-  text-transform: uppercase;
-  letter-spacing: 1px;
-  text-shadow: 0 0 6px rgba(100, 255, 60, 0.6), 0 1px 3px rgba(0, 0, 0, 0.8);
-  background: rgba(10, 20, 10, 0.6);
-  padding: 2px 8px;
-  border-radius: 4px;
-}
-
-.dig-icon-dist {
-  font-size: 9px;
-  font-weight: 600;
-  color: rgba(160, 200, 140, 0.6);
-  background: rgba(10, 20, 10, 0.5);
-  padding: 1px 6px;
-  border-radius: 3px;
-}
-
-/* ═══════════════════════════════════════════
-   CRATE ICONS - World-space, clickable (no value)
-   ═══════════════════════════════════════════ */
-.crate-icon {
-  position: absolute;
-  transform: translate(-50%, -50%);
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 3px;
-  pointer-events: none;
-  transition: opacity 150ms;
-}
-
-.crate-icon.clickable {
-  pointer-events: auto;
-  cursor: pointer;
-}
-
-.crate-icon.clickable.pickup-ready:hover .crate-icon-box {
-  transform: scale(1.12);
-  filter: brightness(1.3);
-}
-
-.crate-icon-box {
-  width: 44px;
-  height: 44px;
-  color: #d4a843;
-  filter: drop-shadow(0 0 8px rgba(212, 168, 67, 0.4));
-  transition: transform 0.2s, filter 0.2s;
-}
-
-.crate-icon.pickup-ready .crate-icon-box {
-  animation: crateFloat 1.8s ease-in-out infinite;
-  color: #f0c050;
-  filter: drop-shadow(0 0 12px rgba(240, 192, 80, 0.5));
-}
-
-@keyframes crateFloat {
-  0%, 100% { transform: translateY(0); }
-  50% { transform: translateY(-4px); }
-}
-
-.crate-icon-box svg {
-  width: 100%;
-  height: 100%;
-}
-
-.crate-icon-label {
-  font-size: 10px;
-  font-weight: 600;
-  color: rgba(220, 190, 100, 0.85);
-  background: rgba(15, 12, 5, 0.7);
-  padding: 2px 8px;
-  border-radius: 4px;
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
+  letter-spacing: 0.5px;
   white-space: nowrap;
 }
 
-.crate-pickup-hint {
-  font-size: 9px;
-  font-weight: 700;
-  color: #f0c050;
-  text-transform: uppercase;
-  letter-spacing: 0.8px;
-  background: rgba(20, 15, 5, 0.7);
-  padding: 2px 7px;
-  border-radius: 3px;
-  border: 1px solid rgba(240, 192, 80, 0.3);
-  animation: hintPulse 1.2s ease-in-out infinite;
+.click-area-dig {
+  border: 2px solid rgba(100, 255, 60, 0.6);
+  box-shadow: 0 0 12px rgba(80, 200, 50, 0.3);
 }
 
-@keyframes hintPulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.6; }
+.click-area-dig .click-area-text {
+  color: #a8ff60;
 }
 
-.crate-icon.distant .crate-icon-box {
-  color: rgba(180, 150, 80, 0.5);
-  filter: none;
-  animation: none;
+.click-area-dig:hover {
+  border-color: rgba(140, 255, 80, 0.9);
+  box-shadow: 0 0 20px rgba(100, 255, 60, 0.5);
 }
 
-.crate-icon.distant .crate-icon-label {
-  color: rgba(180, 150, 80, 0.5);
+.click-area-crate.ready {
+  border: 2px solid rgba(240, 192, 80, 0.6);
+  box-shadow: 0 0 10px rgba(220, 170, 50, 0.3);
+}
+
+.click-area-crate.ready .click-area-text {
+  color: #f0c855;
+}
+
+.click-area-crate.ready:hover {
+  border-color: rgba(255, 210, 90, 0.9);
+  box-shadow: 0 0 18px rgba(240, 192, 80, 0.5);
+}
+
+.click-area-crate.far {
+  border: 1px solid rgba(150, 130, 80, 0.3);
+  opacity: 0.6;
+  cursor: default;
+}
+
+.click-area-crate.far .click-area-text {
+  color: rgba(180, 160, 100, 0.7);
+  font-weight: 500;
 }
