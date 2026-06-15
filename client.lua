@@ -163,8 +163,19 @@ local function addKnownPoint(point)
         zoneId = point.zoneId, zoneLabel = point.zoneLabel, areaName = point.areaName,
         tier = point.tier,
         scanRange = point.scanRange or Config.Detector.scanRange,
-        iconRenderDistance = point.iconRenderDistance or Config.Detector.iconRenderDistance
+        iconRenderDistance = point.iconRenderDistance or Config.Detector.iconRenderDistance,
+        zCorrected = false  -- Will be corrected when player gets close enough
     }
+end
+
+-- Correct Z coordinate to ground level (lazy: only when terrain is streamed)
+local function ensureGroundZ(point)
+    if point.zCorrected then return end
+    local found, groundZ = GetGroundZFor_3dCoord(point.coords.x, point.coords.y, point.coords.z + 100.0, false)
+    if found and groundZ > 0.0 then
+        point.coords = vector3(point.coords.x, point.coords.y, groundZ)
+        point.zCorrected = true
+    end
 end
 
 RegisterNetEvent('realrpg_detector:client:syncPoints', function(points)
@@ -180,9 +191,18 @@ RegisterNetEvent('realrpg_detector:client:removePoint', function(id) knownPoints
 local function getNearestPoint(playerCoords)
     local nearest, nearestDist = nil, 999999.0
     for _, point in pairs(knownPoints) do
-        local dist = #(playerCoords - point.coords)
-        if dist <= (point.scanRange or Config.Detector.scanRange) and dist < nearestDist then
-            nearestDist = dist; nearest = point
+        -- Lazy Z correction when player is in the area (terrain streamed)
+        ensureGroundZ(point)
+        -- Use 2D distance for scan range (Z may still be off for far points)
+        local dx = playerCoords.x - point.coords.x
+        local dy = playerCoords.y - point.coords.y
+        local dist2D = math.sqrt(dx * dx + dy * dy)
+        -- Use 3D for actual proximity (dig/icon)
+        local dist3D = #(playerCoords - point.coords)
+        -- Scan range check uses 2D so Z inaccuracy doesn't kill detection
+        local scanRange = point.scanRange or Config.Detector.scanRange
+        if dist2D <= scanRange and dist3D < nearestDist then
+            nearestDist = dist3D; nearest = point
         end
     end
     return nearest, nearestDist
@@ -508,8 +528,11 @@ CreateThread(function()
 
             -- Dig points: only show if within digDistance
             for _, point in pairs(knownPoints) do
-                local dist = #(pCoords - point.coords)
-                if dist <= Config.Detector.digDistance then
+                ensureGroundZ(point)
+                local dx = pCoords.x - point.coords.x
+                local dy = pCoords.y - point.coords.y
+                local dist2D = math.sqrt(dx * dx + dy * dy)
+                if dist2D <= Config.Detector.digDistance then
                     local onScreen, sx, sy = World3dToScreen2d(point.coords.x, point.coords.y, point.coords.z + 0.6)
                     if onScreen then
                         icons[#icons + 1] = {
@@ -517,7 +540,7 @@ CreateThread(function()
                             id = point.id,
                             x = sx,
                             y = sy,
-                            dist = dist
+                            dist = dist2D
                         }
                     end
                 end
@@ -550,15 +573,19 @@ CreateThread(function()
                 local scanRange = nearest.scanRange or Config.Detector.scanRange
                 local targetHeading = headingToPoint(pCoords, nearest.coords)
                 local relativeAngle = normalizeAngle(targetHeading - playerHeading)
-                local strength = 1.0 - math.min(distance / scanRange, 1.0)
-                local canDig = distance <= Config.Detector.digDistance
+                -- Use 2D distance for strength/canDig (Z may not be perfect)
+                local dx = pCoords.x - nearest.coords.x
+                local dy = pCoords.y - nearest.coords.y
+                local dist2D = math.sqrt(dx * dx + dy * dy)
+                local strength = 1.0 - math.min(dist2D / scanRange, 1.0)
+                local canDig = dist2D <= Config.Detector.digDistance
 
                 if canDig then closestDiggablePoint = nearest else closestDiggablePoint = nil end
 
                 if now - lastNuiUpdate > 50 then
                     SendNUIMessage({
                         action = 'radar',
-                        hasTarget = true, distance = distance, maxDistance = scanRange,
+                        hasTarget = true, distance = dist2D, maxDistance = scanRange,
                         angle = relativeAngle, strength = strength,
                         area = nearest.areaName or nearest.zoneLabel or Config.Detector.areaName,
                         coordX = pCoords.x, coordY = pCoords.y,
